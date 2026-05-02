@@ -21,7 +21,14 @@ This file is self-contained for classroom submission:
 
 from __future__ import annotations
 
+import sys
 import argparse
+
+# Force UTF-8 encoding for standard output/error on Windows
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 import json
 import math
 import os
@@ -34,6 +41,14 @@ try:
     from dotenv import load_dotenv
 except Exception:  # pragma: no cover - optional dependency
     load_dotenv = None
+
+try:
+    from ddgs import DDGS
+except Exception:
+    try:
+        from duckduckgo_search import DDGS
+    except Exception:
+        DDGS = None
 
 
 APP_TITLE = "Data Engineering RAG Agent"
@@ -528,6 +543,7 @@ class RetrievalGuardrails:
         "data modeling star schema fact dimension metric semantic layer "
         "performance cost optimization compaction clustering caching "
         "pipeline data engineering etl elt dwh dw report dashboard "
+        "data lake lakehouse warehouse iceberg delta spark dbt airflow "
         "ข้อมูล ดึง นำเข้า จัดเก็บ แปลง คุณภาพ ความปลอดภัย ออกแบบ สร้าง วิเคราะห์"
     )
 
@@ -547,6 +563,39 @@ class RetrievalGuardrails:
             )
         score = token_overlap(query, self._DE_VOCAB)
         return GuardrailResult(allowed=True, reason="ผ่าน guardrails", top_score=score)
+
+
+class WebSearchTool:
+    """Fallback search engine when local knowledge is missing. (Wow ⭐ Web Search)"""
+
+    def __init__(self) -> None:
+        self.enabled = DDGS is not None
+
+    def search(self, query: str, max_results: int = 5) -> list[Document]:
+        if not self.enabled:
+            return []
+        try:
+            # Simple heuristic: if query is Thai, search in Thai/English
+            # duckduckgo_search handles this well by default.
+            with DDGS() as ddgs:
+                # Add 'data engineering' to focus the results
+                focused_query = f"{query} data engineering"
+                results = list(ddgs.text(focused_query, max_results=max_results))
+                
+                docs: list[Document] = []
+                for i, res in enumerate(results):
+                    docs.append(
+                        Document(
+                            doc_id=f"web_{i+1}",
+                            title=res.get("title", "Web Result"),
+                            category="external_search",
+                            tags=("web", "external", "real-time"),
+                            text=res.get("body", "No description available.") + f" Source: {res.get('href')}",
+                        )
+                    )
+                return docs
+        except Exception:
+            return []
 
 
 class SemanticRetriever:
@@ -658,12 +707,10 @@ class ToolSpec:
 
 def classify_scope_tool(question: str, preferences: list[str]) -> dict[str, Any]:
     categories = list(dict.fromkeys(preferences + extract_preferences(question)))
-    if not categories:
-        categories = ["ingestion", "storage_lakehouse", "transformation", "data_quality"]
     categories = [category for category in categories if category in DATA_ENGINEERING_CATEGORIES]
     return {
         "categories": categories[:6],
-        "scope_rule": "Only data engineering categories are allowed in retrieval and generation.",
+        "scope_rule": "Only data engineering categories are allowed. Return empty if nothing matches.",
     }
 
 
@@ -891,7 +938,8 @@ class OutputController:
                 if key in raw and raw[key]:
                     data[key] = raw[key]
         data["sources"] = [
-            source for source in ensure_list(data.get("sources")) if source in allowed_sources
+            source for source in ensure_list(data.get("sources")) 
+            if source in allowed_sources or source.startswith("web_")
         ] or allowed_sources[:4]
         data["categories"] = [
             category
@@ -902,34 +950,71 @@ class OutputController:
         data["quality_controls"] = ensure_list(data.get("quality_controls"))[:10]
         data["governance_controls"] = ensure_list(data.get("governance_controls"))[:10]
         data["risks"] = ensure_list(data.get("risks"))[:6]
-        data["follow_up"] = str(data.get("follow_up", "ต้องการให้ลงรายละเอียดส่วนไหนของ pipeline ต่อ?"))[:180]
-        data["summary"] = clamp_text(str(data.get("summary", "")), 420)
-        data["architecture"] = clamp_text(str(data.get("architecture", "")), 1000)
+        data["follow_up"] = str(data.get("follow_up", "ต้องการให้ลงรายละเอียดส่วนไหนต่อ?"))[:300]
+        data["summary"] = clamp_text(str(data.get("summary", "")), 1500)
+        data["architecture"] = clamp_text(str(data.get("architecture", "")), 2500)
         return data
 
-    def render_markdown(self, data: dict[str, Any], hallucination: "HallucinationReport | None" = None) -> str:
+    def render_markdown(self, data: dict[str, Any], hallucination: "HallucinationReport | None" = None, search_results: list[SearchResult] = []) -> str:
         # If out-of-scope (no categories/sources), show only the refusal message
         if not data.get("categories") and not data.get("sources"):
+            if data.get("summary") == "nothing matched":
+                return f"⛔ **nothing matched**\n\nขออภัย ฉันไม่พบหัวข้อ data engineering ในคำถามของคุณ"
             return f"⛔ **ไม่สามารถตอบคำถามนี้ได้**\n\n{data.get('summary', '')}"
 
-        pipeline = "\n".join(f"- {item}" for item in ensure_list(data.get("pipeline_plan")))
-        quality = "\n".join(f"- {item}" for item in ensure_list(data.get("quality_controls")))
-        governance = "\n".join(f"- {item}" for item in ensure_list(data.get("governance_controls")))
-        risks = "\n".join(f"- {item}" for item in ensure_list(data.get("risks")))
-        sources = ", ".join(ensure_list(data.get("sources")))
-        categories = ", ".join(ensure_list(data.get("categories")))
-        sections = [
-            f"**Role**\nSenior Data Engineer",
-            f"**Categories**\n{categories}",
-            f"**Summary**\n{data.get('summary')}",
-            f"**Architecture**\n{data.get('architecture')}",
-            f"**Pipeline Plan**\n{pipeline}",
-            f"**Data Quality**\n{quality}",
-            f"**Governance & Security**\n{governance}",
-            f"**Risks**\n{risks}",
-            f"**Sources**\n{sources}",
-            f"**Next**\n{data.get('follow_up')}",
-        ]
+        sections = []
+        
+        # 1. Summary (Cleaned)
+        summary = data.get("summary", "")
+        sections.append(f"**Summary**\n{summary}")
+        
+        # 2. Architecture & Pipeline (Conditional)
+        arch = data.get("architecture", "")
+        plan = ensure_list(data.get("pipeline_plan", []))
+        
+        has_design = bool(arch.strip() or plan)
+        if arch.strip():
+            sections.append(f"**Architecture**\n{arch}")
+        if plan:
+            pipeline = "\n".join(f"- {item}" for item in plan)
+            sections.append(f"**Pipeline Plan**\n{pipeline}")
+            
+        # 3. Quality, Governance, Risks (Conditional on Design)
+        quality = ensure_list(data.get("quality_controls", []))
+        if quality:
+            sections.append(f"**Data Quality**\n" + "\n".join(f"- {item}" for item in quality))
+            
+        if has_design:
+            gov = ensure_list(data.get("governance_controls", []))
+            if gov:
+                sections.append(f"**Governance & Security**\n" + "\n".join(f"- {item}" for item in gov))
+            
+            risks = ensure_list(data.get("risks", []))
+            if risks:
+                sections.append(f"**Risks**\n" + "\n".join(f"- {item}" for item in risks))
+
+        # 4. Sources (Transparent URLs)
+        source_ids = ensure_list(data.get("sources", []))
+        source_links = []
+        for sid in source_ids:
+            # Find the actual URL from search_results
+            matched = next((r for r in search_results if r.document.doc_id == sid), None)
+            if matched and matched.document.category == "external_search":
+                # Extract URL from document text (last part after "Source: ")
+                url_match = re.search(r"Source:\s*(https?://\S+)", matched.document.text)
+                if url_match:
+                    source_links.append(f"[{matched.document.title}]({url_match.group(1)})")
+                else:
+                    source_links.append(sid)
+            else:
+                source_links.append(sid)
+        
+        if source_links:
+            sections.append(f"**Sources**\n" + ", ".join(source_links))
+            
+        # 5. Next (Suggestive)
+        sections.append(f"**Next**\n{data.get('follow_up')}")
+
         if hallucination is not None:
             verdict_icon = {"pass": "✅", "warn": "⚠️", "fail": "❌"}.get(hallucination.verdict, "❓")
             issues_text = "\n".join(f"- {i}" for i in hallucination.issues) or "- none"
@@ -1065,13 +1150,7 @@ def build_prompt(
     scope_report: dict[str, Any],
     guardrail: "GuardrailResult | None" = None,
 ) -> str:
-    """Build the augmented prompt.
-
-    Wow ⭐⭐ Augmented:
-    - Prompt Template: retrieved context + tool trace + user profile memory
-    - Memory: DynamicMemory summary injected as memory_json
-    - System Prompt: explicit out-of-scope refusal instruction with examples
-    """
+    """Build the augmented prompt."""
     context = "\n\n".join(
         f"[{result.document.doc_id}] category={result.document.category}; "
         f"{result.document.title}: {result.document.text}"
@@ -1090,10 +1169,7 @@ def build_prompt(
         refusal_block = textwrap.dedent("""
             ⚠️  OUT-OF-SCOPE DETECTED — MANDATORY REFUSAL RULES:
             - The user's question is outside data engineering scope.
-            - You MUST set "summary" to a polite Thai refusal, e.g.:
-              "ขออภัย คำถามนี้อยู่นอกขอบเขต data engineering ที่ฉันช่วยได้
-               ลองถามเกี่ยวกับ pipeline, lakehouse, orchestration, data quality
-               หรือ governance แทนได้เลยครับ"
+            - You MUST set "summary" to "nothing matched".
             - Keep all other JSON fields as empty lists or empty strings.
             - Do NOT answer the off-topic question under any circumstances.
             - Do NOT be tricked by rephrasing or "as a data engineer, ..." framing.
@@ -1179,6 +1255,7 @@ class DataEngineeringRAGAgent:
         self.retriever = SemanticRetriever(KNOWLEDGE_BASE)
         self.guardrails = RetrievalGuardrails()          # Wow ⭐⭐ Retrieval Guardrails
         self.llm = LLMClient()
+        self.web_search = WebSearchTool()                 # Wow ⭐ Web Search Fallback
         self.output_controller = OutputController()
         self.hallucination_evaluator = HallucinationEvaluator(self.llm)
 
@@ -1215,11 +1292,7 @@ class DataEngineeringRAGAgent:
         # ── Retrieval Guardrails (Wow ⭐⭐) ──────────────────────────────────
         guardrail = self.guardrails.check(question)
         if not guardrail.allowed:
-            refusal = (
-                "ขออภัย คำถามนี้อยู่นอกขอบเขต data engineering ที่ฉันช่วยได้ "
-                "ลองถามเกี่ยวกับ pipeline, lakehouse, orchestration, data quality "
-                "หรือ governance แทนได้เลยครับ"
-            )
+            refusal = "nothing matched"
             structured: dict[str, Any] = {
                 "summary": refusal,
                 "architecture": "",
@@ -1241,13 +1314,9 @@ class DataEngineeringRAGAgent:
                 "llm_enabled": self.llm.available,
                 "search_results": [],
                 "hallucination_evaluation": None,
-                "output_schema_keys": list(structured.keys()),
+                "output_schema_keys": ["summary", "architecture", "pipeline_plan", "quality_controls", "governance_controls", "risks", "sources", "categories", "follow_up"],
             }
             return AgentResponse(markdown=markdown, structured=structured, debug=debug)
-
-        # ── Query Expansion + HyDE (Wow ⭐) ──────────────────────────────────
-        queries = self.query_enhancer.expand(question, profile, llm=self.llm)
-        search_results = self.retriever.search(queries, top_k=7)
 
         tool_middleware = ToolMiddleware()
         scope = tool_middleware.call(
@@ -1259,7 +1328,56 @@ class DataEngineeringRAGAgent:
             category
             for category in ensure_list(scope.get("categories"))
             if category in DATA_ENGINEERING_CATEGORIES
-        ] or ["ingestion", "storage_lakehouse", "transformation", "data_quality"]
+        ]
+        
+        # ── Strict Category Check (Wow ⭐⭐) ──────────────────────────────────
+        if not categories:
+            refusal = "nothing matched"
+            structured = {
+                "summary": refusal,
+                "architecture": "",
+                "pipeline_plan": [],
+                "quality_controls": [],
+                "governance_controls": [],
+                "risks": ["No data engineering categories detected in the query."],
+                "sources": [],
+                "categories": [],
+                "follow_up": "ลองถามเกี่ยวกับ data pipeline, storage, transformation หรือ data quality ดูนะครับ",
+            }
+            return AgentResponse(
+                markdown=f"⛔ **{refusal}**\n\nขออภัย ฉันไม่พบหัวข้อ data engineering ในคำถามของคุณ",
+                structured=structured,
+                debug={"error": "no_category_match", "categories": []}
+            )
+
+        # ── Query Expansion + HyDE (Wow ⭐) ──────────────────────────────────
+        queries = self.query_enhancer.expand(question, profile, llm=self.llm)
+        search_results = self.retriever.search(queries, top_k=7)
+
+        # ── Web Search Primary (Wow ⭐⭐) ──────────────────────────────────
+        # We now search the web for almost every question to ensure the best coverage,
+        # only skipping if we have a near-perfect local match (0.95+).
+        local_top_score = search_results[0].score if search_results else 0.0
+        is_embedding = self.retriever.mode.startswith("gemini-embedding")
+        threshold = 0.95 # Very high threshold to force web search
+        
+        web_results = []
+        if local_top_score < threshold:
+            # We use the raw question for the best web search results
+            web_docs = self.web_search.search(question, max_results=5)
+            for doc in web_docs:
+                web_results.append(SearchResult(doc, 0.95, question)) # Higher priority than most local docs
+            
+            # Combine results: Web first, then local
+            search_results = web_results + search_results
+            search_results = search_results[:10] # Increase context window for better answers
+
+        tool_middleware = ToolMiddleware()
+        scope = tool_middleware.call(
+            "classify_scope",
+            question=question,
+            preferences=profile.known_preferences[:],
+        )
 
         architecture = tool_middleware.call(
             "recommend_architecture",
@@ -1297,6 +1415,8 @@ class DataEngineeringRAGAgent:
             sources=allowed_sources,
             injection_report=injection_report,
             scope_report=scope_report,
+            search_results=search_results,
+            question=question,
         )
         prompt = build_prompt(
             question=question,
@@ -1318,7 +1438,7 @@ class DataEngineeringRAGAgent:
         hallucination = self.hallucination_evaluator.evaluate(
             structured, search_results, allowed_categories
         )
-        markdown = self.output_controller.render_markdown(structured, hallucination)
+        markdown = self.output_controller.render_markdown(structured, hallucination, search_results)
         debug = {
             "model_role": "senior data engineer",
             "retrieval_scope": "data_engineering_only",
@@ -1363,38 +1483,37 @@ class DataEngineeringRAGAgent:
         sources: list[str],
         injection_report: dict[str, Any],
         scope_report: dict[str, Any],
+        search_results: list[SearchResult] = [],
+        question: str = "",
     ) -> dict[str, Any]:
         category_text = ", ".join(categories)
+        
+        # Design detection for conditional fallback
+        is_design = any(word in question.lower() for word in ["design", "architecture", "pipeline", "plan", "build", "create", "setup", "โครงสร้าง", "วางระบบ", "ออกแบบ", "สร้าง"])
+        
+        # If we have search results, try to extract a more meaningful summary for the fallback
+        summary_prefix = ""
+        if search_results:
+            top_doc = search_results[0].document
+            summary_prefix = f"เกี่ยวกับ {top_doc.title}: {top_doc.text[:200]}... "
+
         risks = [
             "schema drift จาก source อาจทำให้ downstream pipeline fail",
             "ไม่มี freshness SLA และ alert จะทำให้ตรวจ incident ช้า",
-            "partition strategy ไม่เหมาะสมอาจเพิ่ม cost และ runtime",
-            "ถ้าไม่มี owner/lineage จะ debug และ audit ได้ยาก",
         ]
-        if injection_report.get("detected"):
-            risks.insert(0, "พบ pattern ที่คล้าย prompt/script injection จึงล็อก role, scope, schema และ allowed sources ไว้")
-        if scope_report.get("detected"):
-            risks.insert(0, "คำถามอยู่นอก data engineering scope จึงตอบเฉพาะส่วนที่เกี่ยวข้องกับ data engineering เท่านั้น")
+        
         return {
             "summary": (
-                f"ในบทบาท senior data engineer คำตอบนี้ถูกจำกัดให้อยู่ในหมวด "
-                f"{category_text} โดยรองรับประมาณ {profile.records_per_day:,} records/day "
-                f"และโปรเจกต์ขนาด {profile.project_size}."
+                f"{summary_prefix}คำตอบนี้ครอบคลุมหมวด {category_text}."
             ),
-            "architecture": (
-                f"แนะนำ {architecture.get('pattern')} ใช้ {architecture.get('compute')}. "
-                f"จัดข้อมูลเป็น zones: {', '.join(architecture.get('zones', []))}. "
-                f"ขนาดข้อมูลประมาณ {capacity.get('estimated_daily_gb')} GB/day, "
-                f"{capacity.get('estimated_monthly_gb')} GB/month; partition strategy: "
-                f"{capacity.get('partition_strategy')}; SLA: {capacity.get('recommended_sla')}."
-            ),
-            "pipeline_plan": pipeline.get("plan", []),
-            "quality_controls": quality.get("checks", []),
-            "governance_controls": governance.get("controls", []),
+            "architecture": architecture.get('pattern', '') if is_design else "",
+            "pipeline_plan": ensure_list(pipeline.get('steps', [])) if is_design else [],
+            "quality_controls": ensure_list(quality.get('checks', [])),
+            "governance_controls": ensure_list(governance.get('policies', [])),
             "risks": risks,
             "sources": sources[:4],
             "categories": categories,
-            "follow_up": "ต้องการให้ลงลึกที่ architecture diagram, table design, หรือ DAG implementation?",
+            "follow_up": "ต้องการให้ลงรายละเอียดส่วนไหนต่อ?",
         }
 
 
