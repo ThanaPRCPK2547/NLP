@@ -1,0 +1,4 @@
+google-genai>=1.0.0
+python-dotenv>=1.0.1
+gradio>=4.44.0
+scikit-learn>=1.4.0
