@@ -967,7 +967,9 @@ class OutputController:
         data["architecture"] = clamp_text(str(data.get("architecture", "")), 2500)
         return data
 
-    def render_markdown(self, data: dict[str, Any], hallucination: "HallucinationReport | None" = None, search_results: list[SearchResult] = []) -> str:
+    def render_markdown(self, data: dict[str, Any], hallucination: "HallucinationReport | None" = None, search_results: "list[SearchResult] | None" = None) -> str:
+        if search_results is None:
+            search_results = []
         # 1. เช็กผลตรวจจากตำรวจ (Evaluator) ถ้า Fail ให้ตัดจบตรงนี้เลย
         if not data.get("sources") and len(data.get("summary", "")) > 50:
             return "⛔ **ไม่พบข้อมูลที่เกี่ยวข้อง**\n\nคำถามของคุณไม่อยู่ในขอบเขตฐานข้อมูล Data Engineering ของเรา"
@@ -1395,33 +1397,25 @@ class DataEngineeringRAGAgent:
             # Combine results: Web first, then local (แต่เราจะกรองก่อน)
             all_results = web_results + search_results
             
-            # --- เพิ่มการกรอง Threshold ตรงนี้ ---
-            # คัดเฉพาะผลลัพธ์ที่คะแนนมากกว่า 0.8 เท่านั้นถึงจะส่งให้ AI
-            search_results = [res for res in all_results if res.score >= 0.8]
+            # Keep all results; sort by score descending and cap at 10
+            search_results = sorted(all_results, key=lambda r: r.score, reverse=True)[:10]
             if not search_results:
-                # ส่งสัญญาณบอก Agent ว่าไม่มีข้อมูลนะ
-                return []
-            search_results = search_results[:10]
-            context_text = "=== DATA ENGINEERING KNOWLEDGE BASE ===\n"
-            for res in search_results:
-                # แยกประเภทแหล่งที่มาให้ AI เห็นชัดๆ
-                source_type = "OFFICIAL" if not res.document.doc_id.startswith("web_") else "EXTERNAL WEB (UNVERIFIED)"
-                
-                context_text += f"""
-    SOURCE ID: {res.document.doc_id}
-    TYPE: {source_type}
-    CONTENT: {res.document.text}
-    ------------------------------------------
-    """
-            # ใส่กฎเหล็กปิดท้าย
-            context_text += "\nRULE: Prioritize OFFICIAL sources over EXTERNAL WEB. If unsure, state the uncertainty."
-
-        tool_middleware = ToolMiddleware()
-        scope = tool_middleware.call(
-            "classify_scope",
-            question=question,
-            preferences=profile.known_preferences[:],
-        )
+                structured_empty: dict[str, Any] = {
+                    "summary": "nothing matched",
+                    "architecture": "",
+                    "pipeline_plan": [],
+                    "quality_controls": [],
+                    "governance_controls": [],
+                    "risks": ["No relevant data engineering context found."],
+                    "sources": [],
+                    "categories": [],
+                    "follow_up": "ลองถามเกี่ยวกับ data pipeline, storage, transformation หรือ data quality ดูนะครับ",
+                }
+                return AgentResponse(
+                    markdown="⛔ **nothing matched**\n\nขออภัย ไม่พบข้อมูลที่เกี่ยวข้องกับคำถามของคุณ",
+                    structured=structured_empty,
+                    debug={"error": "no_search_results", "categories": categories},
+                )
 
         architecture = tool_middleware.call(
             "recommend_architecture",
@@ -1483,19 +1477,21 @@ class DataEngineeringRAGAgent:
             structured, search_results, allowed_categories
         )
         if hallucination.verdict == "fail" or hallucination.score < 0.5:
-            # พ่น Log บอกใน Terminal เพื่อ Debug
             print(f"!!! Hallucination Detected (Verdict: {hallucination.verdict}, Score: {hallucination.score})")
             print(f"Issues: {hallucination.issues}")
-            
-            # บังคับเปลี่ยนเนื้อหาในตัวแปร structured ทันที
             structured = {
                 "summary": "I am sorry, but I can only assist with Data Engineering related topics. The requested information was flagged as out of scope or unsupported by the technical context.",
                 "architecture": "Access Denied: Non-Data Engineering Content.",
                 "sources": [],
-                "categories": ["out_of_scope"]
+                "categories": ["out_of_scope"],
             }
-            # อัปเดตรายการ issues เพื่อเก็บไว้ดูในหน้า Debug
-            hallucination.issues.append("Force blocked by Subject Guardrail")
+            hallucination = HallucinationReport(
+                verdict=hallucination.verdict,
+                score=hallucination.score,
+                issues=list(hallucination.issues) + ["Force blocked by Subject Guardrail"],
+                grounded_sources=hallucination.grounded_sources,
+                fabricated_sources=hallucination.fabricated_sources,
+            )
 
         markdown = self.output_controller.render_markdown(structured, hallucination, search_results)
         debug = {
@@ -1542,9 +1538,11 @@ class DataEngineeringRAGAgent:
         sources: list[str],
         injection_report: dict[str, Any],
         scope_report: dict[str, Any],
-        search_results: list[SearchResult] = [],
+        search_results: "list[SearchResult] | None" = None,
         question: str = "",
     ) -> dict[str, Any]:
+        if search_results is None:
+            search_results = []
         category_text = ", ".join(categories)
         
         # Design detection for conditional fallback
@@ -1566,9 +1564,9 @@ class DataEngineeringRAGAgent:
                 f"{summary_prefix}คำตอบนี้ครอบคลุมหมวด {category_text}."
             ),
             "architecture": architecture.get('pattern', '') if is_design else "",
-            "pipeline_plan": ensure_list(pipeline.get('steps', [])) if is_design else [],
+            "pipeline_plan": ensure_list(pipeline.get('plan', [])) if is_design else [],
             "quality_controls": ensure_list(quality.get('checks', [])),
-            "governance_controls": ensure_list(governance.get('policies', [])),
+            "governance_controls": ensure_list(governance.get('controls', [])),
             "risks": risks,
             "sources": sources[:4],
             "categories": categories,
