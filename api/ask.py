@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import sys
@@ -9,12 +10,12 @@ from typing import Any
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-AGENT_PATH = ROOT_DIR / "model" / "20260425_ai_agent_v2.py"
+AGENT_PATH = ROOT_DIR / "model" / "model.py"
 MAX_REQUEST_BYTES = 24_000
 
 
 def _load_agent_module() -> Any:
-    module_name = "data_engineering_rag_agent"
+    module_name = "data_engineering_agent"
     if module_name in sys.modules:
         return sys.modules[module_name]
     spec = importlib.util.spec_from_file_location(module_name, AGENT_PATH)
@@ -27,7 +28,16 @@ def _load_agent_module() -> Any:
 
 
 _module = _load_agent_module()
-_agent = _module.DataEngineeringRAGAgent()
+_agent = _module.DataEngineeringAgent()
+
+
+def _run_async(coro: Any) -> Any:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 class handler(BaseHTTPRequestHandler):
@@ -40,8 +50,10 @@ class handler(BaseHTTPRequestHandler):
                 "ok": True,
                 "service": "Data Engineering RAG Agent",
                 "endpoint": "/api/ask",
-                "llm_enabled": bool(_agent.llm.available),
-                "retrieval_mode": _agent.retriever.mode,
+                "agent_type": "LangGraph ReAct",
+                "vector_store": "Qdrant (all-MiniLM-L6-v2)",
+                "tracing": "Langfuse" if getattr(_agent, "_langfuse", None) is not None else "disabled",
+                "llm_enabled": _agent.available,
             }
         )
 
@@ -76,14 +88,16 @@ class handler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = _agent.ask(
-                question,
-                name=payload.get("name", "Guest"),
-                role_level=payload.get("role_level", "mid"),
-                project_size=payload.get("project_size", "medium"),
-                records_per_day=payload.get("records_per_day", 1_000_000),
-                preferred_stack=payload.get("preferred_stack", "cloud-agnostic"),
-                answer_style=payload.get("answer_style", "practical"),
+            result = _run_async(
+                _agent.ask(
+                    question,
+                    name=payload.get("name", "Guest"),
+                    role_level=payload.get("role_level", "mid"),
+                    project_size=payload.get("project_size", "medium"),
+                    records_per_day=payload.get("records_per_day", 1_000_000),
+                    preferred_stack=payload.get("preferred_stack", "cloud-agnostic"),
+                    answer_style=payload.get("answer_style", "practical"),
+                )
             )
         except Exception:
             self._send_json({"error": "Agent failed to process the request"}, status=500)
@@ -93,11 +107,7 @@ class handler(BaseHTTPRequestHandler):
             {
                 "markdown": result.markdown,
                 "structured": result.structured,
-                "debug": {
-                    k: v
-                    for k, v in result.debug.items()
-                    if k not in {"expanded_queries", "tool_trace", "output_schema_keys"}
-                },
+                "debug": result.debug,
             }
         )
 

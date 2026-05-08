@@ -23,5 +23,6 @@ env/
 
 # Vector DB / cache
 chroma_db/
+qdrant_db/
 *.faiss
 *.pkl

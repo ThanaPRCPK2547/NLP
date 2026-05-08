@@ -1,5 +1,12 @@
-google-genai>=1.0.0
+langchain>=0.3.0,<2.0.0
+langchain-google-genai>=2.0.0
+langchain-community>=0.3.0,<1.0.0
+langchain-qdrant>=0.2.0
+langchain-huggingface>=0.1.0
+qdrant-client>=1.12.0
+langgraph>=0.2.0,<2.0.0
+langfuse>=2.55.0,<3.0.0
 python-dotenv>=1.0.1
 gradio>=4.44.0
-scikit-learn>=1.4.0
-ddgs>=9.14.0
+ddgs>=9.0.0
+sentence-transformers>=3.0.0
