@@ -1,173 +1,592 @@
 <!doctype html>
 <html lang="th">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DataArchitect AI</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
-      min-height: 100vh;
-      background-color: #09090b;
-      background-image: 
-        radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
-        radial-gradient(at 50% 0%, hsla(225,39%,30%,0.2) 0, transparent 50%), 
-        radial-gradient(at 100% 0%, hsla(339,49%,30%,0.15) 0, transparent 50%);
-      color: #e6edf3;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+      display: flex;
+      height: 100vh;
+      background: #131314;
+      color: #e3e3e3;
+      font-family: "Google Sans", Inter, ui-sans-serif, system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    /* ─── SIDEBAR ─── */
+    #sidebar {
+      width: 260px;
+      min-width: 260px;
+      background: #1e1f20;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      padding: 64px 20px 40px;
+      padding: 12px 0;
+      overflow-y: auto;
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
     }
-    h1 {
-      font-size: 28px;
-      font-weight: 900;
-      background: linear-gradient(135deg, #00d1ff 0%, #3b82f6 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      margin-bottom: 40px;
-      text-align: center;
-      filter: drop-shadow(0 4px 12px rgba(0,209,255,0.15));
-    }
-    .box {
-      width: min(760px, 100%);
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-    textarea {
-      width: 100%;
-      min-height: 120px;
-      padding: 16px;
-      background: rgba(20, 23, 29, 0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 12px;
-      color: #e6edf3;
-      font: inherit;
-      font-size: 15px;
-      resize: vertical;
-      line-height: 1.6;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 24px -4px rgba(0,0,0,0.3);
-    }
-    textarea:focus { 
-      outline: none; 
-      border-color: rgba(0, 209, 255, 0.5);
-      background: rgba(20, 23, 29, 0.8);
-      box-shadow: 0 0 0 4px rgba(0, 209, 255, 0.1), 0 8px 32px -4px rgba(0,0,0,0.5);
-    }
-    textarea::placeholder { color: #8b949e; opacity: 0.7; }
-    button {
-      padding: 14px;
-      background: linear-gradient(135deg, #00d1ff 0%, #0088ff 100%);
-      color: #ffffff;
-      border: none;
-      border-radius: 12px;
-      font-weight: 700;
-      font-size: 16px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 14px 0 rgba(0, 209, 255, 0.3);
-    }
-    button:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 209, 255, 0.4);
-    }
-    button:active:not(:disabled) {
-      transform: translateY(0);
-    }
-    button:disabled { 
-      opacity: 0.7; 
-      cursor: wait; 
-      background: linear-gradient(135deg, #3b4252 0%, #2e3440 100%);
-      box-shadow: none;
-      color: #a8b2c1;
-    }
-    #answer {
-      margin-top: 12px;
-      padding: 24px;
-      background: rgba(15, 23, 42, 0.6);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 16px;
-      line-height: 1.7;
-      font-size: 15px;
-      min-height: 80px;
-      display: none;
-      box-shadow: 0 10px 40px -10px rgba(0,0,0,0.5);
-      animation: slideUp 0.4s ease-out forwards;
-    }
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    #answer p { margin-bottom: 14px; color: #cbd5e1; }
-    #answer p:last-child { margin-bottom: 0; }
-    #answer h1, #answer h2, #answer h3, #answer h4 { color: #f8fafc; margin: 28px 0 14px; font-weight: 700; }
-    #answer h1:first-child, #answer h2:first-child, #answer h3:first-child, #answer h4:first-child { margin-top: 0; }
-    #answer ul, #answer ol { margin-left: 24px; margin-bottom: 14px; color: #cbd5e1; }
-    #answer li { margin-bottom: 6px; }
-    #answer li::marker { color: #00d1ff; }
-    #answer code { background: rgba(30, 41, 59, 0.8); padding: 3px 6px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13.5px; color: #38bdf8; border: 1px solid rgba(255,255,255,0.05); }
-    #answer pre { background: rgba(9, 9, 11, 0.8); padding: 16px 20px; border-radius: 10px; overflow-x: auto; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
-    #answer pre code { background: transparent; padding: 0; color: #e2e8f0; border: none; }
-    #answer blockquote { border-left: 4px solid #00d1ff; padding-left: 16px; color: #94a3b8; margin-bottom: 16px; background: linear-gradient(90deg, rgba(0,209,255,0.05) 0%, transparent 100%); padding-top: 8px; padding-bottom: 8px; border-radius: 0 8px 8px 0; }
-    #answer a { color: #38bdf8; text-decoration: none; font-weight: 500; transition: color 0.2s; }
-    #answer a:hover { color: #7dd3fc; text-decoration: underline; }
-    .loading-text { 
-      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; 
-      color: #94a3b8; 
+
+    .sidebar-top {
       display: flex;
       align-items: center;
       gap: 12px;
+      padding: 8px 16px 16px;
+    }
+
+    .icon-btn {
+      display: none;
+    }
+
+    .sidebar-bottom {
+      display: none;
+    }
+
+    .input-left {
+      display: none;
+    }
+
+    .sidebar-title {
+      font-size: 18px;
+      font-weight: 500;
+      color: #e3e3e3;
+    }
+
+    .sidebar-nav {
+      padding: 4px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 12px;
+      border-radius: 24px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #c4c7c5;
+      transition: background 0.15s;
+      text-decoration: none;
+    }
+
+    .nav-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .nav-item svg {
+      flex-shrink: 0;
+      opacity: 0.8;
+    }
+
+    .sidebar-section-label {
+      font-size: 12px;
+      color: #8e918f;
+      padding: 12px 20px 6px;
       font-weight: 500;
     }
-    .loading-spinner {
-      width: 18px;
-      height: 18px;
-      border: 3px solid rgba(0, 209, 255, 0.3);
-      border-radius: 50%;
-      border-top-color: #00d1ff;
-      animation: spin 1s ease-in-out infinite;
+
+    .chat-item {
+      padding: 8px 20px;
+      font-size: 13.5px;
+      color: #c4c7c5;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border-radius: 0 24px 24px 0;
+      margin-right: 8px;
+      transition: background 0.15s;
     }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .chat-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .chat-item.active {
+      background: rgba(138, 180, 248, 0.15);
+      color: #8ab4f8;
+    }
+
+    .sidebar-bottom {
+      margin-top: auto;
+      padding: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    /* ─── MAIN ─── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* top bar */
+    #topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    #topbar .app-name {
+      font-size: 18px;
+      font-weight: 500;
+      color: #e3e3e3;
+    }
+
+    /* content area */
+    #content {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 20px 40px;
+    }
+
+    /* greeting (shown when no answer) */
+    #greeting {
+      margin-top: auto;
+      padding-top: 80px;
+      text-align: left;
+      width: min(720px, 100%);
+    }
+
+    #greeting .sub {
+      font-size: 20px;
+      color: #9aa0a6;
+      font-weight: 400;
+      margin-bottom: 4px;
+    }
+
+    #greeting .main-text {
+      font-size: 40px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #4285f4 0%, #ea4335 40%, #fbbc04 70%, #34a853 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+    }
+
+    /* answer area */
+    #answer-area {
+      width: min(720px, 100%);
+      padding-top: 40px;
+      display: none;
+    }
+
+    #answer-area.visible {
+      display: block;
+    }
+
+    .msg-user {
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 18px 18px 4px 18px;
+      padding: 12px 18px;
+      margin-bottom: 24px;
+      font-size: 15px;
+      color: #e3e3e3;
+      align-self: flex-end;
+      max-width: 80%;
+      margin-left: auto;
+    }
+
+    .msg-ai {
+      font-size: 15px;
+      line-height: 1.75;
+      color: #c4c7c5;
+      margin-bottom: 24px;
+    }
+
+    .msg-ai p {
+      margin-bottom: 12px;
+    }
+
+    .msg-ai p:last-child {
+      margin-bottom: 0;
+    }
+
+    .msg-ai h1,
+    .msg-ai h2,
+    .msg-ai h3,
+    .msg-ai h4 {
+      color: #e3e3e3;
+      margin: 20px 0 10px;
+      font-weight: 600;
+    }
+
+    .msg-ai ul,
+    .msg-ai ol {
+      margin-left: 22px;
+      margin-bottom: 12px;
+    }
+
+    .msg-ai li {
+      margin-bottom: 5px;
+    }
+
+    .msg-ai li::marker {
+      color: #4285f4;
+    }
+
+    .msg-ai code {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+      color: #80cbc4;
+    }
+
+    .msg-ai pre {
+      background: #1e1f20;
+      padding: 16px;
+      border-radius: 10px;
+      overflow-x: auto;
+      margin-bottom: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .msg-ai pre code {
+      background: none;
+      padding: 0;
+      color: #e3e3e3;
+    }
+
+    .msg-ai blockquote {
+      border-left: 3px solid #4285f4;
+      padding-left: 14px;
+      color: #9aa0a6;
+      margin-bottom: 14px;
+    }
+
+    .msg-ai a {
+      color: #8ab4f8;
+      text-decoration: none;
+    }
+
+    .msg-ai a:hover {
+      text-decoration: underline;
+    }
+
+    .loading-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #9aa0a6;
+      font-size: 14px;
+      padding: 8px 0;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(66, 133, 244, 0.3);
+      border-top-color: #4285f4;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* debug log */
+    #debug-log {
+      display: none;
+      margin-top: 16px;
+      padding: 14px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+    }
+
+    #debug-log h3 {
+      font-size: 12px;
+      color: #8e918f;
+      margin-bottom: 8px;
+    }
+
+    #debug-log pre {
+      font-size: 11.5px;
+      color: #4fc3f7;
+      overflow-x: auto;
+    }
+
+    /* ─── INPUT BAR ─── */
+    #input-bar {
+      padding: 16px 20px 24px;
+      background: linear-gradient(to top, #131314 70%, transparent);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .input-wrap {
+      width: min(720px, 100%);
+      background: #1e1f20;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      padding: 14px 16px 10px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .input-wrap:focus-within {
+      border-color: rgba(138, 180, 248, 0.4);
+      box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.1);
+    }
+
+    #question {
+      width: 100%;
+      background: none;
+      border: none;
+      outline: none;
+      color: #e3e3e3;
+      font: inherit;
+      font-size: 15px;
+      resize: none;
+      line-height: 1.5;
+      max-height: 200px;
+      overflow-y: auto;
+      min-height: 24px;
+    }
+
+    #question::placeholder {
+      color: #8e918f;
+    }
+
+    .input-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+
+    .input-left {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .chip-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: #9aa0a6;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: 20px;
+      transition: background 0.15s;
+    }
+
+    .chip-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #e3e3e3;
+    }
+
+    .send-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #4285f4;
+      transition: background 0.15s;
+    }
+
+    .send-btn:hover:not(:disabled) {
+      background: rgba(66, 133, 244, 0.12);
+    }
+
+    .send-btn:disabled {
+      color: #5f6368;
+      cursor: default;
+    }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
+
 <body>
-  <h1>DataArchitect AI</h1>
-  <div class="box">
-    <textarea id="question" maxlength="1500" placeholder="ถามเกี่ยวกับ data engineering เช่น ออกแบบ pipeline รับข้อมูล API รายวัน 1 ล้าน record พร้อม data quality"></textarea>
-    <div style="display: flex; gap: 12px; width: 100%;">
-      <button id="send" style="flex: 1;">ถาม</button>
-      <button id="toggle-log" style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); width: auto; white-space: nowrap; box-shadow: none;">ดู Log</button>
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar">
+    <div class="sidebar-top">
+      <span class="sidebar-title">DataArchitect AI</span>
     </div>
-    <div id="answer"></div>
-    <div id="debug-log" style="display: none; margin-top: 16px; padding: 16px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-      <h3 style="color: #8b949e; font-weight: 600; font-size: 14px; margin-bottom: 12px;">Agent Execution Log</h3>
-      <pre style="font-size: 12px; color: #38bdf8; overflow-x: auto; background: transparent; border: none; padding: 0;"><code id="debug-content">รอการประมวลผล... (ระบบจะแสดง Log เมื่อ Agent ทำงานเสร็จ)</code></pre>
+
+    <div class="sidebar-nav">
+      <a class="nav-item" href="#" id="new-chat-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path
+            d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+        </svg>
+        แชทใหม่
+      </a>
+    </div>
+
+    <div class="sidebar-section-label">แชท</div>
+    <div id="chat-history"></div>
+  </aside>
+
+  <!-- MAIN -->
+  <div id="main">
+    <div id="topbar">
+      <span class="app-name">DataArchitect AI</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="chip-btn" id="toggle-log" style="font-size:12px;color:#8e918f;">ดู Log</button>
+      </div>
+    </div>
+
+    <div id="content">
+      <div id="greeting">
+        <div class="sub">สวัสดี</div>
+        <div class="main-text">เราจะเริ่มจากตรงไหนก่อนดี</div>
+      </div>
+
+      <div id="answer-area">
+        <div id="answer"></div>
+        <div id="debug-log">
+          <h3>Agent Execution Log</h3>
+          <pre><code id="debug-content">รอการประมวลผล...</code></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- INPUT BAR -->
+    <div id="input-bar">
+      <div class="input-wrap">
+        <textarea id="question" rows="1" maxlength="1500" placeholder="ถาม DataArchitect AI"></textarea>
+        <div class="input-actions">
+          <div class="input-left"></div>
+          <button class="send-btn" id="send" disabled title="ส่ง">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+
     </div>
   </div>
 
   <script>
-    const send = document.getElementById("send");
-    const answer = document.getElementById("answer");
+    const sendBtn = document.getElementById("send");
+    const questionEl = document.getElementById("question");
+    const answerEl = document.getElementById("answer");
+    const answerArea = document.getElementById("answer-area");
+    const greeting = document.getElementById("greeting");
+    const historyEl = document.getElementById("chat-history");
 
+    // ── Session store ──────────────────────────────────────────
+    // sessions: Array<{ id, title, htmlSnapshot, debugData }>
+    let sessions = [];
+    let activeId = null;
+
+    function createSession(title) {
+      const s = { id: Date.now(), title, htmlSnapshot: "", debugData: null };
+      sessions.unshift(s);
+      activeId = s.id;
+      renderHistory();
+      return s;
+    }
+
+    function saveSnapshot() {
+      const s = sessions.find(x => x.id === activeId);
+      if (s) s.htmlSnapshot = answerEl.innerHTML;
+    }
+
+    function renderHistory() {
+      historyEl.innerHTML = "";
+      sessions.forEach(s => {
+        const el = document.createElement("div");
+        el.className = "chat-item" + (s.id === activeId ? " active" : "");
+        el.textContent = s.title;
+        el.addEventListener("click", () => loadSession(s.id));
+        historyEl.appendChild(el);
+      });
+    }
+
+    function loadSession(id) {
+      // Save current before switching
+      saveSnapshot();
+      activeId = id;
+      const s = sessions.find(x => x.id === id);
+      answerEl.innerHTML = s.htmlSnapshot;
+      answerArea.classList.add("visible");
+      greeting.style.display = "none";
+      if (s.debugData) {
+        document.getElementById("debug-content").textContent = JSON.stringify(s.debugData, null, 2);
+      }
+      renderHistory();
+      // Scroll to bottom
+      document.getElementById("content").scrollTop = document.getElementById("content").scrollHeight;
+    }
+
+    // ── UI helpers ─────────────────────────────────────────────
+    questionEl.addEventListener("input", () => {
+      questionEl.style.height = "auto";
+      questionEl.style.height = Math.min(questionEl.scrollHeight, 200) + "px";
+      sendBtn.disabled = !questionEl.value.trim();
+    });
+
+    document.getElementById("new-chat-btn").addEventListener("click", (e) => {
+      e.preventDefault();
+      saveSnapshot();
+      activeId = null;
+      questionEl.value = "";
+      questionEl.style.height = "auto";
+      sendBtn.disabled = true;
+      answerEl.innerHTML = "";
+      answerArea.classList.remove("visible");
+      greeting.style.display = "block";
+      document.getElementById("debug-log").style.display = "none";
+      renderHistory();
+    });
+
+    // ── Ask ────────────────────────────────────────────────────
     async function ask() {
-      const q = document.getElementById("question").value.trim();
+      const q = questionEl.value.trim();
       if (!q) return;
-      send.disabled = true;
-      answer.style.display = "block";
-      // We no longer hide the log on submit so the user can keep it open if they want.
-      // document.getElementById("debug-log").style.display = "none";
-      answer.innerHTML = '<div class="loading-text"><div class="loading-spinner"></div>กำลังประมวลผลข้อมูล...</div>';
+
+      // Create new session on first message
+      if (!activeId) createSession(q.length > 40 ? q.slice(0, 40) + "…" : q);
+
+      greeting.style.display = "none";
+      answerArea.classList.add("visible");
+
+      answerEl.innerHTML += `<div class="msg-user">${q}</div>`;
+
+      const loadId = "load-" + Date.now();
+      answerEl.innerHTML += `<div class="loading-row" id="${loadId}"><div class="spinner"></div>กำลังประมวลผล...</div>`;
+      document.getElementById("content").scrollTop = document.getElementById("content").scrollHeight;
+
+      sendBtn.disabled = true;
+      questionEl.value = "";
+      questionEl.style.height = "auto";
+
       try {
         const res = await fetch("/api/ask", {
           method: "POST",
@@ -175,30 +594,38 @@
           body: JSON.stringify({ question: q })
         });
         const data = await res.json();
+        document.getElementById(loadId)?.remove();
+
         if (res.ok) {
-          answer.innerHTML = marked.parse(data.markdown);
+          answerEl.innerHTML += `<div class="msg-ai">${marked.parse(data.markdown)}</div>`;
           if (data.debug) {
+            const s = sessions.find(x => x.id === activeId);
+            if (s) s.debugData = data.debug;
             document.getElementById("debug-content").textContent = JSON.stringify(data.debug, null, 2);
           }
         } else {
-          answer.innerHTML = `<p style="color: #ff7b72;">${data.error || "เกิดข้อผิดพลาด"}</p>`;
+          answerEl.innerHTML += `<div class="msg-ai" style="color:#f28b82;">${data.error || "เกิดข้อผิดพลาด"}</div>`;
         }
       } catch (e) {
-        answer.innerHTML = `<p style="color: #ff7b72;">เชื่อมต่อ API ไม่ได้: ${e.message}</p>`;
+        document.getElementById(loadId)?.remove();
+        answerEl.innerHTML += `<div class="msg-ai" style="color:#f28b82;">เชื่อมต่อ API ไม่ได้: ${e.message}</div>`;
       } finally {
-        send.disabled = false;
+        sendBtn.disabled = false;
+        saveSnapshot();
+        document.getElementById("content").scrollTop = document.getElementById("content").scrollHeight;
       }
     }
 
     document.getElementById("toggle-log").addEventListener("click", () => {
-      const logDiv = document.getElementById("debug-log");
-      logDiv.style.display = logDiv.style.display === "none" ? "block" : "none";
+      const log = document.getElementById("debug-log");
+      log.style.display = log.style.display === "none" ? "block" : "none";
     });
 
-    send.addEventListener("click", ask);
-    document.getElementById("question").addEventListener("keydown", (e) => {
+    sendBtn.addEventListener("click", ask);
+    questionEl.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") ask();
     });
   </script>
 </body>
+
 </html>
